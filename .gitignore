@@ -1,8 +1,14 @@
+# Carpetas que no queremos subir a GitHub
 data/ 
-# Ignorar archivos y carpetas que no queremos subir a GitHub
-data/
+datos_procesados/
 processed_commodities/
+notebooks/
 outputs/
+salidas/
+
+# Archivos temporales de Python
 __pycache__/
 *.pkl
+
+# Otros archivos grandes
 *.xlsx
