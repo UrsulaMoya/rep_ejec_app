@@ -1,112 +1,126 @@
+import streamlit as st
 import os
 import pandas as pd
-import streamlit as st
-import plotly.express as px
+import io
+from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
-# 📁 Carpeta base donde están los reportes
-BASE_DIR = r"C:\Users\umoya\Dropbox\Espacio familiar\Commodities\outputs"
+# ==============================================================================
+# CONFIGURACIÓN DE RUTAS
+# ==============================================================================
+# Define la ruta base a la carpeta "salidas" donde se encuentran los reportes en Excel.
+BASE_DIR_EXIT = r"C:\Users\umoya\Dropbox\PRIAX UM\Prueba_DespliegueFantasia\Productos\salidas"
 
-# 📌 Obtener la lista de commodities desde la carpeta outputs
-def listar_commodities(base_dir):
-    """Lista todas las carpetas dentro del directorio de outputs."""
-    try:
-        return [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
-    except FileNotFoundError:
-        st.error("❌ Error: No se encontró la carpeta de commodities.")
+# ==============================================================================
+# FUNCIONES AUXILIARES
+# ==============================================================================
+
+def get_products():
+    """
+    Retorna una lista ordenada de productos disponibles en la carpeta 'salidas'.
+    Cada producto es representado por una subcarpeta (por ejemplo: "chicle" o "pastilla").
+    """
+    if not os.path.exists(BASE_DIR_EXIT):
         return []
+    # Se listan solo los directorios (productos) y se ordenan alfabéticamente.
+    products = [d for d in os.listdir(BASE_DIR_EXIT) if os.path.isdir(os.path.join(BASE_DIR_EXIT, d))]
+    return sorted(products)
 
-# 📌 Obtener la lista de reportes disponibles para un commodity
-def listar_reportes(commodity):
-    """Lista los archivos .xlsx dentro de la carpeta del commodity seleccionado."""
-    path = os.path.join(BASE_DIR, commodity)
-    try:
-        return [f for f in os.listdir(path) if f.endswith(".xlsx")]
-    except FileNotFoundError:
-        st.error(f"❌ Error: No se encontraron reportes para {commodity}.")
+def get_report_files(product):
+    """
+    Dado un producto, retorna una lista de archivos Excel (.xlsx) disponibles en la
+    subcarpeta correspondiente (se asume que el nombre de la carpeta es el producto en minúsculas).
+    """
+    product_path = os.path.join(BASE_DIR_EXIT, product.lower())
+    if not os.path.exists(product_path):
         return []
+    # Se filtran los archivos que terminen en .xlsx
+    files = [f for f in os.listdir(product_path) if f.endswith('.xlsx')]
+    return sorted(files)
 
-# 📌 Cargar el archivo Excel seleccionado
-@st.cache_data
-def cargar_reporte(commodity, reporte):
-    """Carga el archivo Excel en un DataFrame de Pandas."""
-    file_path = os.path.join(BASE_DIR, commodity, reporte)
-    try:
-        return pd.read_excel(file_path)
-    except Exception as e:
-        st.error(f"❌ Error al cargar el archivo: {e}")
-        return pd.DataFrame()
+@st.cache_data(show_spinner=False)
+def load_excel(file_path, sheet_name):
+    """
+    Carga el contenido de un archivo Excel de la hoja indicada usando pandas.
+    Se utiliza st.cache_data para evitar recargar el mismo archivo repetidamente y así optimizar tiempo y memoria.
+    """
+    return pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
 
-# 📌 Configuración del Dashboard
-st.set_page_config(page_title="Dashboard de Commodities", layout="wide")
+@st.cache_data(show_spinner=False)
+def generate_excel_bytes(df, sheet_name):
+    """
+    A partir de un DataFrame y el nombre de la hoja, genera un archivo Excel en memoria.
+    Devuelve los bytes del archivo, los cuales se usarán para la descarga.
+    """
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+    output.seek(0)
+    return output.read()
 
-# 🎨 Título del Dashboard
-st.title("📊 Dashboard Interactivo de Commodities (versión prueba)")
+# ==============================================================================
+# INTERFAZ DE USUARIO CON STREAMLIT
+# ==============================================================================
 
-# 📍 Selección del commodity
-commodities = listar_commodities(BASE_DIR)
-commodity_seleccionado = st.selectbox("Selecciona un commodity:", commodities)
+st.title("PANEL de Reportes de Productos")
+st.write("Utilice los controles de la barra lateral para seleccionar el producto, el reporte y la hoja que desea visualizar.")
 
-# 📍 Selección del reporte
-if commodity_seleccionado:
-    reportes = listar_reportes(commodity_seleccionado)
-    reporte_seleccionado = st.selectbox("Selecciona un reporte:", reportes)
+# ------------------------------------------------------------------------------
+# SECCIÓN: Selección de Producto
+# ------------------------------------------------------------------------------
+# Llama a la función get_products() para obtener la lista de productos (subcarpetas en 'salidas')
+products = get_products()
+if products:
+    selected_product = st.sidebar.selectbox("Seleccione el producto", products)
+else:
+    st.sidebar.error("No se encontraron productos en la carpeta 'salidas'.")
+    selected_product = None
 
-    if reporte_seleccionado:
-        df = cargar_reporte(commodity_seleccionado, reporte_seleccionado)
+if selected_product:
+    # ------------------------------------------------------------------------------
+    # SECCIÓN: Selección del Archivo de Reporte
+    # ------------------------------------------------------------------------------
+    report_files = get_report_files(selected_product)
+    if report_files:
+        selected_report_file = st.sidebar.selectbox("Seleccione el reporte", report_files)
+    else:
+        st.sidebar.error("No se encontraron reportes para el producto seleccionado.")
+        selected_report_file = None
 
-        # Verifica si el DataFrame tiene contenido
-        if not df.empty:
-            st.subheader("📋 Datos del Reporte")
-            st.dataframe(df)  # Muestra la tabla interactiva
+    # ------------------------------------------------------------------------------
+    # SECCIÓN: Selección de la Hoja (Pestaña) del Reporte
+    # ------------------------------------------------------------------------------
+    sheet_options = ["Reporte REG", "Reporte REC"]
+    selected_sheet = st.sidebar.radio("Seleccione la pestaña del reporte", sheet_options)
 
-            # 🎯 Pestañas para REG y REC
-            tab1, tab2 = st.tabs(["REG", "REC"])
-
-            with tab1:
-                st.header("📊 Análisis de REG")
-                if "N_Casos_Hits_MU" in df.columns and "N_Casos_NoHits_MU" in df.columns:
-                    fig1 = px.bar(
-                        df,
-                        x=df.index,
-                        y=["N_Casos_Hits_MU", "N_Casos_NoHits_MU"],
-                        labels={"value": "Cantidad de Casos", "variable": "Tipo"},
-                        title="Comparación de Hits y No Hits (REG)",
-                        barmode="group"
-                    )
-                    st.plotly_chart(fig1)
-
-                if "Rent_Real_Promedio_Hits_a_la_Sem1 (%)" in df.columns and "Rent_Real_Promedio_NoHits_a_la_Sem1 (%)" in df.columns:
-                    fig2 = px.line(
-                        df,
-                        x=df.index,
-                        y=["Rent_Real_Promedio_Hits_a_la_Sem1 (%)", "Rent_Real_Promedio_NoHits_a_la_Sem1 (%)"],
-                        labels={"value": "Rentabilidad (%)", "variable": "Tipo"},
-                        title="Rentabilidad Promedio a la Semana 1 (REG)"
-                    )
-                    st.plotly_chart(fig2)
-
-            with tab2:
-                st.header("📊 Análisis de REC")
-                if "N_Casos_Hits_MU" in df.columns and "N_Casos_NoHits_MU" in df.columns:
-                    fig3 = px.bar(
-                        df,
-                        x=df.index,
-                        y=["N_Casos_Hits_MU", "N_Casos_NoHits_MU"],
-                        labels={"value": "Cantidad de Casos", "variable": "Tipo"},
-                        title="Comparación de Hits y No Hits (REC)",
-                        barmode="group"
-                    )
-                    st.plotly_chart(fig3)
-
-                if "Rent_Real_Promedio_Hits_a_la_Sem1 (%)" in df.columns and "Rent_Real_Promedio_NoHits_a_la_Sem1 (%)" in df.columns:
-                    fig4 = px.line(
-                        df,
-                        x=df.index,
-                        y=["Rent_Real_Promedio_Hits_a_la_Sem1 (%)", "Rent_Real_Promedio_NoHits_a_la_Sem1 (%)"],
-                        labels={"value": "Rentabilidad (%)", "variable": "Tipo"},
-                        title="Rentabilidad Promedio a la Semana 1 (REC)"
-                    )
-                    st.plotly_chart(fig4)
-
+    # ------------------------------------------------------------------------------
+    # SECCIÓN: Botón para Cargar y Mostrar el Reporte Completo
+    # ------------------------------------------------------------------------------
+    if st.sidebar.button("Cargar Reporte"):
+        if selected_report_file:
+            # Construir la ruta completa al archivo Excel
+            file_path = os.path.join(BASE_DIR_EXIT, selected_product.lower(), selected_report_file)
+            try:
+                # Se carga el reporte completo con la función cacheada para optimizar recursos.
+                df_report = load_excel(file_path, selected_sheet)
+                st.success(f"Reporte cargado: {selected_report_file} - {selected_sheet}")
+                
+                # Mostrar el reporte completo en la aplicación.
+                st.dataframe(df_report)
+                
+                # Generar los bytes del Excel para la descarga.
+                excel_bytes = generate_excel_bytes(df_report, selected_sheet)
+                st.download_button(
+                    label="Descargar Reporte",
+                    data=excel_bytes,
+                    file_name=f"{selected_product}_{selected_report_file}_{selected_sheet}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as e:
+                st.error(f"Error al cargar el reporte: {e}")
         else:
-            st.warning("⚠️ El archivo está vacío o tiene errores en la lectura.")
+            st.error("No se ha seleccionado un reporte.")
+
+# ==============================================================================
+# FIN DEL PANEL
+# ==============================================================================
