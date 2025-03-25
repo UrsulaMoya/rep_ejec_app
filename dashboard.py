@@ -13,7 +13,7 @@ DROPBOX_TOKEN = st.secrets["dropbox"]["access_token"]
 dbx = dropbox.Dropbox(DROPBOX_TOKEN)
 
 # Ruta en Dropbox donde están los reportes
-DROPBOX_BASE_PATH = "/salidas"
+DROPBOX_BASE_PATH = "/Apps/productos_panel_app/salidas"
 
 # ==============================================================================
 # FUNCIONES AUXILIARES
